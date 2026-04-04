@@ -330,7 +330,9 @@ StatsLeft:AddToggle("PlayerSpeedToggle", {
         end
     end
 })
-StatsLeft:AddSlider("PlayerSpeedSlider", {Text = "Player Speed", Default = 16, Min = 16, Max = 300, Rounding = 0, Callback = function(v) playerSpeedValue = v end})
+
+-- ✅ Updated: Max speed raised to 100,000
+StatsLeft:AddSlider("PlayerSpeedSlider", {Text = "Player Speed", Default = 16, Min = 16, Max = 100000, Rounding = 0, Callback = function(v) playerSpeedValue = v end})
 
 task.spawn(function()
     while true do
