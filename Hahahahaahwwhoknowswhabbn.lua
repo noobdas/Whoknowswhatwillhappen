@@ -16,7 +16,7 @@ local isMobile = UserInputService.TouchEnabled and not UserInputService.Keyboard
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/phntmhub/Phantom-hub/refs/heads/main/ObsidianUi.lua"))()
 
 local Window = Library:CreateWindow({
-    Title = "Bite By Night Executor" .. (isMobile and " [Mobile]" or ""),
+    Title = "Bite By Night" .. (isMobile and " [Mobile]" or ""),
     Footer = "by Phantom Hub",
     Center = true,
     AutoShow = true,
@@ -120,8 +120,9 @@ local TabSettings = Window:AddTab("Settings", "settings", "UI Customization")
 local KillerGroup1 = TabKiller:AddLeftGroupbox("Combat")
 local KillerGroup2 = TabKiller:AddRightGroupbox("Targeting")
 
-local AutoGroup1 = TabAutoFarm:AddLeftGroupbox("Auto Tasks")
+local AutoGroup1 = TabAutoFarm:AddLeftGroupbox("Tasks & Escape")
 local AutoGroup2 = TabAutoFarm:AddRightGroupbox("Auto Combat")
+local AntiDeathGroup = TabAutoFarm:AddRightGroupbox("Anti Death")
 
 local NavGroup1 = TabNavigation:AddLeftGroupbox("Locations")
 local NavGroup2 = TabNavigation:AddRightGroupbox("Options")
@@ -312,6 +313,60 @@ NavGroup1:AddButton({ Text = "Teleport to Safe Zone", Func = function()
     local duration = math.random(0.3,0.8) * (1 + (1 - stealthLevel) * 2)
     tweenTeleport(CFrame.new(targetPos), duration)
     Library:Notify({ Title = "Navigation", Content="Teleported to safe zone", Time=2 })
+end })
+
+NavGroup1:AddButton({ Text = "Teleport to Escape", Func = function()
+    local part = getEscapePart()
+    if not part then
+        Library:Notify({ Title = "Error", Content = "No escape point found", Time = 2 })
+        return
+    end
+    local pos = part.Position + Vector3.new(math.random(-2,2), 0, math.random(-2,2))
+    local duration = math.random(0.3, 0.8) * (1 + (1 - stealthLevel) * 2)
+    tweenTeleport(CFrame.new(pos), duration)
+    Library:Notify({ Title = "Navigation", Content = "Teleported to escape", Time = 2 })
+end })
+
+NavGroup1:AddButton({ Text = "Teleport to Battery", Func = function()
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local closest, closestDist = nil, math.huge
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if (obj:IsA("MeshPart") or obj:IsA("BasePart")) and obj.Name:lower():find("batter") then
+            local dist = (root.Position - obj.Position).Magnitude
+            if dist < closestDist then closestDist = dist closest = obj end
+        end
+    end
+    if not closest then
+        Library:Notify({ Title = "Error", Content = "No battery found", Time = 2 })
+        return
+    end
+    local pos = closest.Position + Vector3.new(math.random(-2,2), 2, math.random(-2,2))
+    local duration = math.random(0.3, 0.8) * (1 + (1 - stealthLevel) * 2)
+    tweenTeleport(CFrame.new(pos), duration)
+    Library:Notify({ Title = "Navigation", Content = "Teleported to battery", Time = 2 })
+end })
+
+NavGroup1:AddButton({ Text = "Teleport to Spawn", Func = function()
+    local spawnPart
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("SpawnLocation") then spawnPart = obj break end
+    end
+    if not spawnPart then
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name:lower():find("spawn") then spawnPart = obj break end
+        end
+    end
+    local targetPos
+    if spawnPart then
+        targetPos = spawnPart.Position + Vector3.new(math.random(-3,3), 3, math.random(-3,3))
+    else
+        targetPos = Vector3.new(0, 100, 0)
+    end
+    local duration = math.random(0.3, 0.8) * (1 + (1 - stealthLevel) * 2)
+    tweenTeleport(CFrame.new(targetPos), duration)
+    Library:Notify({ Title = "Navigation", Content = "Teleported to spawn", Time = 2 })
 end })
 
 NavGroup2:AddSlider("StealthTeleport", { Text="Stealth Level", Default=50, Min=0, Max=100, Suffix="%", Callback=function(v) stealthLevel=v/100 end })
@@ -547,13 +602,18 @@ end })
 
 local autoGen = false
 local genConn = nil
+local genLastFire = 0
+local GEN_FIRE_INTERVAL = 0.2
 
 AutoGroup1:AddToggle("AutoGenerator", { Text="Auto Repair Generators", Default=false, Callback=function(v)
     autoGen = v
     if genConn then genConn:Disconnect() genConn = nil end
     if v then
-        genConn = RunService.RenderStepped:Connect(function()
+        genLastFire = 0
+        genConn = RunService.Heartbeat:Connect(function()
             if not autoGen then return end
+            if tick() - genLastFire < GEN_FIRE_INTERVAL then return end
+            genLastFire = tick()
             local gui = player.PlayerGui
             if gui then
                 local genFrame = gui:FindFirstChild("Gen")
@@ -599,6 +659,186 @@ AutoGroup1:AddToggle("PerfectBarricade", { Text="Perfect Barricade", Default=fal
         Library:Notify({ Title="Perfect Barricade", Content="Disabled", Time=2 })
     end
 end })
+
+local autoEscape = false
+local autoEscapeConn = nil
+
+local function getEscapePart()
+    local map = Workspace:FindFirstChild("MAPS") and Workspace.MAPS:FindFirstChild("GAME MAP")
+    if not map then return nil end
+    local escapes = map:FindFirstChild("Escapes")
+    if not escapes then return nil end
+    for _, obj in ipairs(escapes:GetChildren()) do
+        if obj:IsA("BasePart") then return obj end
+        if obj:IsA("Model") then
+            local p = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if p then return p end
+        end
+    end
+    return nil
+end
+
+local autoEscapeLastTp = 0
+local AUTO_ESCAPE_INTERVAL = 0.8
+
+AutoGroup1:AddToggle("AutoEscape", { Text="Auto Escape (Loop)", Default=false, Callback=function(v)
+    autoEscape = v
+    if autoEscapeConn then autoEscapeConn:Disconnect() autoEscapeConn = nil end
+    if v then
+        autoEscapeLastTp = 0
+        autoEscapeConn = RunService.Heartbeat:Connect(function()
+            if not autoEscape then return end
+            if tick() - autoEscapeLastTp < AUTO_ESCAPE_INTERVAL then return end
+            local char = player.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            local part = getEscapePart()
+            if not part then return end
+            autoEscapeLastTp = tick()
+            local offset = Vector3.new(math.random(-2,2), 0, math.random(-2,2))
+            local duration = math.random(0.3, 0.7) * (1 + (1 - stealthLevel) * 2)
+            tweenTeleport(CFrame.new(part.Position + offset), duration)
+        end)
+        Library:Notify({ Title="Auto Escape", Content="Enabled", Time=2 })
+    else
+        Library:Notify({ Title="Auto Escape", Content="Disabled", Time=2 })
+    end
+end })
+
+local safetyAreaEnabled = false
+local safetyPlatform = nil
+local safetyConn = nil
+local safetyReturnCFrame = nil
+
+local function buildSafetyPlatform()
+    if safetyPlatform and safetyPlatform.Parent then return safetyPlatform end
+    local plat = Instance.new("Part")
+    plat.Name = "PhantomHub_SkyPlatform"
+    plat.Size = Vector3.new(50, 1, 50)
+    plat.Anchored = true
+    plat.CanCollide = true
+    plat.Transparency = 0.4
+    plat.Material = Enum.Material.Neon
+    plat.Color = Color3.fromRGB(0, 180, 220)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local origin = hrp and hrp.Position or Vector3.new(0, 0, 0)
+    plat.Position = Vector3.new(origin.X, origin.Y + 150, origin.Z)
+    plat.Parent = Workspace
+    safetyPlatform = plat
+    return plat
+end
+
+local function findGroundCFrame(fromCFrame)
+    local origin = fromCFrame.Position
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    local char = player.Character
+    local excludes = { safetyPlatform }
+    if char then table.insert(excludes, char) end
+    rayParams.FilterDescendantsInstances = excludes
+    local result = Workspace:Raycast(Vector3.new(origin.X, 300, origin.Z), Vector3.new(0, -1500, 0), rayParams)
+    if result then return CFrame.new(result.Position + Vector3.new(0, 4, 0)) end
+    return nil
+end
+
+AutoGroup1:AddToggle("SafetyArea", { Text="Safety Area (Sky Platform)", Default=false, Callback=function(v)
+    safetyAreaEnabled = v
+    if safetyConn then safetyConn:Disconnect() safetyConn = nil end
+    if v then
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then safetyReturnCFrame = root.CFrame end
+        local plat = buildSafetyPlatform()
+        if root then
+            root.CFrame = CFrame.new(plat.Position + Vector3.new(0, 5, 0))
+        end
+        safetyConn = RunService.Heartbeat:Connect(function()
+            if not safetyAreaEnabled then return end
+            if not safetyPlatform or not safetyPlatform.Parent then buildSafetyPlatform() end
+        end)
+        Library:Notify({ Title="Safety Area", Content="Enabled", Time=2 })
+    else
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            local dest = safetyReturnCFrame
+            if not dest or dest.Position.Y > (safetyPlatform and safetyPlatform.Position.Y - 50 or 400) then
+                dest = findGroundCFrame(root.CFrame)
+            end
+            if dest then root.CFrame = dest end
+        end
+        if safetyPlatform then safetyPlatform:Destroy() safetyPlatform = nil end
+        safetyReturnCFrame = nil
+        Library:Notify({ Title="Safety Area", Content="Returned to ground", Time=2 })
+    end
+end })
+
+local viewKiller = false
+local viewKillerConn = nil
+local originalCameraSubject = nil
+
+local function getKillerCharacter()
+    local killers = Workspace:FindFirstChild("PLAYERS") and Workspace.PLAYERS:FindFirstChild("KILLER")
+    if not killers then return nil end
+    for _, m in ipairs(killers:GetChildren()) do
+        if m:IsA("Model") and m:FindFirstChild("HumanoidRootPart") then return m end
+    end
+    return nil
+end
+
+AutoGroup1:AddToggle("ViewKiller", { Text="View Killer", Default=false, Callback=function(v)
+    viewKiller = v
+    if viewKillerConn then viewKillerConn:Disconnect() viewKillerConn = nil end
+    local camera = Workspace.CurrentCamera
+    if v then
+        originalCameraSubject = camera.CameraSubject
+        viewKillerConn = RunService.RenderStepped:Connect(function()
+            if not viewKiller then return end
+            local killer = getKillerCharacter()
+            if not killer then return end
+            local hum = killer:FindFirstChildOfClass("Humanoid")
+            if hum then camera.CameraSubject = hum end
+        end)
+        Library:Notify({ Title="View Killer", Content="Enabled", Time=2 })
+    else
+        if originalCameraSubject then
+            pcall(function() camera.CameraSubject = originalCameraSubject end)
+        else
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then camera.CameraSubject = hum end
+        end
+        Library:Notify({ Title="View Killer", Content="Disabled", Time=2 })
+    end
+end })
+
+local antiDeathEnabled = false
+local antiDeathThreshold = 30
+local antiDeathConn = nil
+
+AntiDeathGroup:AddToggle("AntiDeath", { Text="Anti Death", Default=false, Callback=function(v)
+    antiDeathEnabled = v
+    if antiDeathConn then antiDeathConn:Disconnect() antiDeathConn = nil end
+    if v then
+        antiDeathConn = RunService.Heartbeat:Connect(function()
+            if not antiDeathEnabled then return end
+            local char = player.Character
+            if not char then return end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum then return end
+            if hum.Health <= antiDeathThreshold then
+                pcall(function() hum.Health = hum.MaxHealth end)
+            end
+        end)
+        Library:Notify({ Title="Anti Death", Content="Enabled", Time=2 })
+    else
+        Library:Notify({ Title="Anti Death", Content="Disabled", Time=2 })
+    end
+end })
+
+AntiDeathGroup:AddSlider("HealthThreshold", { Text="Health Threshold", Default=30, Min=10, Max=80, Rounding=0, Suffix=" hp", Callback=function(v) antiDeathThreshold = v end })
 
 local autoParryEnabled = false
 local autoParryRadius = 15
@@ -664,6 +904,74 @@ AutoGroup2:AddSlider("ParryPrediction", { Text="Prediction", Default=0, Min=0, M
 local infiniteStamina = false
 local staminaConn = nil
 
+local function isCurrentStamina(n)
+    n = n:lower()
+    if n:find("max") then return false end
+    return n:find("stamina") or n:find("sprint") or n:find("energy") or n:find("breath")
+end
+
+local function isMaxStamina(n)
+    n = n:lower()
+    if not n:find("max") then return false end
+    return n:find("stamina") or n:find("sprint") or n:find("energy") or n:find("breath")
+end
+
+local function isExhaustFlag(n)
+    n = n:lower()
+    return n:find("exhaust") or n:find("tired") or n:find("winded") or n:find("outofbreath") or n:find("outofstamina")
+end
+
+local function isSprintTimer(n)
+    n = n:lower()
+    return n:find("sprinttime") or n:find("sprintduration") or n:find("sprintelapsed") or n:find("sprintused") or n:find("runtime") or n:find("sprintcd") or n:find("sprintcooldown") or n:find("cooldown")
+end
+
+local function isSprintGate(n)
+    n = n:lower()
+    return n == "cansprint" or n == "canrun" or n == "sprintenabled" or n == "sprintallowed" or n == "runenabled"
+end
+
+local function getMaxFor(inst, currentName)
+    for mname, mval in pairs(inst:GetAttributes()) do
+        if isMaxStamina(mname) and type(mval) == "number" then
+            return mval
+        end
+    end
+    return nil
+end
+
+local function refillInstance(inst)
+    if not inst then return end
+    for name, val in pairs(inst:GetAttributes()) do
+        if isCurrentStamina(name) and type(val) == "number" then
+            local max = getMaxFor(inst, name)
+            if max and val < max then
+                pcall(function() inst:SetAttribute(name, max) end)
+            end
+        elseif isExhaustFlag(name) and val == true then
+            pcall(function() inst:SetAttribute(name, false) end)
+        elseif isSprintTimer(name) and type(val) == "number" and val > 0 then
+            pcall(function() inst:SetAttribute(name, 0) end)
+        elseif isSprintGate(name) and val == false then
+            pcall(function() inst:SetAttribute(name, true) end)
+        end
+    end
+end
+
+local function refillValueObjects(parent)
+    if not parent then return end
+    for _, obj in ipairs(parent:GetDescendants()) do
+        if (obj:IsA("NumberValue") or obj:IsA("IntValue")) and isCurrentStamina(obj.Name) then
+            local maxObj = parent:FindFirstChild("Max" .. obj.Name, true) or parent:FindFirstChild(obj.Name .. "Max", true)
+            if maxObj and (maxObj:IsA("NumberValue") or maxObj:IsA("IntValue")) and obj.Value < maxObj.Value then
+                pcall(function() obj.Value = maxObj.Value end)
+            end
+        elseif obj:IsA("BoolValue") and isExhaustFlag(obj.Name) and obj.Value == true then
+            pcall(function() obj.Value = false end)
+        end
+    end
+end
+
 PlayerGroup2:AddToggle("InfiniteStamina", { Text="Infinite Stamina", Default=false, Callback=function(v)
     infiniteStamina = v
     if staminaConn then staminaConn:Disconnect() staminaConn = nil end
@@ -671,18 +979,23 @@ PlayerGroup2:AddToggle("InfiniteStamina", { Text="Infinite Stamina", Default=fal
         staminaConn = RunService.Heartbeat:Connect(function()
             if not infiniteStamina then return end
             local char = player.Character
-            if char then
-                char:SetAttribute("Stamina", math.huge)
-                char:SetAttribute("MaxStamina", math.huge)
+            if not char then return end
+            local maxStam = char:GetAttribute("MaxStamina")
+            if maxStam and type(maxStam) == "number" then
+                local cur = char:GetAttribute("Stamina")
+                if type(cur) == "number" and cur < maxStam then
+                    pcall(function() char:SetAttribute("Stamina", maxStam) end)
+                end
+            end
+            if char:GetAttribute("CanRun") == false then
+                pcall(function() char:SetAttribute("CanRun", true) end)
+            end
+            if char:GetAttribute("Inability") == true then
+                pcall(function() char:SetAttribute("Inability", false) end)
             end
         end)
         Library:Notify({ Title="Infinite Stamina", Content="Enabled", Time=2 })
     else
-        local char = player.Character
-        if char then
-            char:SetAttribute("Stamina", 100)
-            char:SetAttribute("MaxStamina", 100)
-        end
         Library:Notify({ Title="Infinite Stamina", Content="Disabled", Time=2 })
     end
 end })
@@ -693,33 +1006,35 @@ local speedBoostValue = 32
 
 PlayerGroup1:AddToggle("SpeedBoost", { Text="Speed Boost", Default=false, Callback=function(v)
     speedBoost = v
+    if speedBoostConn then speedBoostConn:Disconnect() speedBoostConn = nil end
     if v then
         speedBoostConn = RunService.RenderStepped:Connect(function()
+            if not speedBoost then return end
             local char = player.Character
-            if char then
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum then hum.WalkSpeed = speedBoostValue end
-                if char:GetAttribute("WalkSpeed") then char:SetAttribute("WalkSpeed", speedBoostValue) end
-                if char:GetAttribute("Speed") then char:SetAttribute("Speed", speedBoostValue) end
-                local speedValue = char:FindFirstChild("WalkSpeed")
-                if speedValue and speedValue:IsA("NumberValue") then speedValue.Value = speedBoostValue end
-                local runSpeed = char:FindFirstChild("RunSpeed")
-                if runSpeed and runSpeed:IsA("NumberValue") then runSpeed.Value = speedBoostValue end
-            end
+            if not char then return end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = speedBoostValue end
+            if char:GetAttribute("WalkSpeed") ~= nil then char:SetAttribute("WalkSpeed", speedBoostValue) end
+            if char:GetAttribute("Speed") ~= nil then char:SetAttribute("Speed", speedBoostValue) end
+            if char:GetAttribute("RunSpeed") ~= nil then char:SetAttribute("RunSpeed", speedBoostValue) end
+            local wsValue = char:FindFirstChild("WalkSpeed")
+            if wsValue and wsValue:IsA("NumberValue") then wsValue.Value = speedBoostValue end
+            local rsValue = char:FindFirstChild("RunSpeed")
+            if rsValue and rsValue:IsA("NumberValue") then rsValue.Value = speedBoostValue end
         end)
         Library:Notify({ Title="Speed Boost", Content="Enabled (" .. speedBoostValue .. ")", Time=2 })
     else
-        if speedBoostConn then speedBoostConn:Disconnect() speedBoostConn = nil end
         local char = player.Character
         if char then
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum then hum.WalkSpeed = 16 end
-            if char:GetAttribute("WalkSpeed") then char:SetAttribute("WalkSpeed", 16) end
-            if char:GetAttribute("Speed") then char:SetAttribute("Speed", 16) end
-            local speedValue = char:FindFirstChild("WalkSpeed")
-            if speedValue and speedValue:IsA("NumberValue") then speedValue.Value = 16 end
-            local runSpeed = char:FindFirstChild("RunSpeed")
-            if runSpeed and runSpeed:IsA("NumberValue") then runSpeed.Value = 16 end
+            if char:GetAttribute("WalkSpeed") ~= nil then char:SetAttribute("WalkSpeed", 16) end
+            if char:GetAttribute("Speed") ~= nil then char:SetAttribute("Speed", 16) end
+            if char:GetAttribute("RunSpeed") ~= nil then char:SetAttribute("RunSpeed", 22) end
+            local wsValue = char:FindFirstChild("WalkSpeed")
+            if wsValue and wsValue:IsA("NumberValue") then wsValue.Value = 16 end
+            local rsValue = char:FindFirstChild("RunSpeed")
+            if rsValue and rsValue:IsA("NumberValue") then rsValue.Value = 22 end
         end
         Library:Notify({ Title="Speed Boost", Content="Disabled", Time=2 })
     end
@@ -728,6 +1043,179 @@ end })
 PlayerGroup1:AddSlider("SpeedBoostValue", { Text="Boost Speed", Default=32, Min=16, Max=100, Suffix=" speed", Callback=function(v)
     speedBoostValue = v
     if speedBoost then Library:Notify({ Title="Speed Boost", Content="Speed: " .. v, Time=1 }) end
+end })
+
+local blinkEnabled = false
+local blinkDistance = 25
+local blinkKeyHeld = false
+
+PlayerGroup1:AddToggle("Blink", { Text="Blink (press Q)", Default=false, Callback=function(v) blinkEnabled = v end })
+PlayerGroup1:AddSlider("BlinkDistance", { Text="Blink Distance", Default=25, Min=10, Max=60, Suffix=" studs", Callback=function(v) blinkDistance = v end })
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed or not blinkEnabled then return end
+    if input.KeyCode ~= Enum.KeyCode.Q then return end
+    if blinkKeyHeld then return end
+    blinkKeyHeld = true
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum then return end
+    local moveDir = hum.MoveDirection
+    local dir = moveDir.Magnitude > 0.1 and moveDir.Unit or root.CFrame.LookVector
+    local target = root.Position + dir * blinkDistance
+    local duration = math.clamp(blinkDistance / 80, 0.15, 0.6)
+    tweenTeleport(CFrame.new(target, target + dir), duration)
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.Q then blinkKeyHeld = false end
+end)
+
+local allowJumping = true
+local allowJumpConn = nil
+PlayerGroup1:AddToggle("AllowJumping", { Text="Allow Jumping", Default=true, Callback=function(v)
+    allowJumping = v
+    if allowJumpConn then allowJumpConn:Disconnect() allowJumpConn = nil end
+    if not v then
+        allowJumpConn = RunService.Heartbeat:Connect(function()
+            if allowJumping then return end
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hum then
+                hum.JumpPower = 0
+                hum.JumpHeight = 0
+                hum.UseJumpPower = true
+                local state = hum:GetState()
+                if state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall then
+                    hum:ChangeState(Enum.HumanoidStateType.Landed)
+                    if hrp and hrp.Velocity.Y > 0 then
+                        hrp.Velocity = Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z)
+                    end
+                end
+            end
+        end)
+    end
+end })
+
+local infinityJump = false
+local infinityJumpConn = nil
+PlayerGroup1:AddToggle("InfinityJump", { Text="Infinity Jump", Default=false, Callback=function(v)
+    infinityJump = v
+    if infinityJumpConn then infinityJumpConn:Disconnect() infinityJumpConn = nil end
+    if v then
+        local lastJump = 0
+        infinityJumpConn = RunService.Heartbeat:Connect(function()
+            if not infinityJump then return end
+            if not UserInputService:IsKeyDown(Enum.KeyCode.Space) then return end
+            if tick() - lastJump < 0.1 then return end
+            lastJump = tick()
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hum and hrp then
+                if hum.JumpPower <= 0 then hum.JumpPower = DEFAULT_JUMPPOWER end
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                hrp.Velocity = Vector3.new(hrp.Velocity.X, hum.JumpPower, hrp.Velocity.Z)
+            end
+        end)
+        Library:Notify({ Title="Infinity Jump", Content="Hold space to keep jumping", Time=3 })
+    else
+        Library:Notify({ Title="Infinity Jump", Content="Disabled", Time=2 })
+    end
+end })
+
+local flightEnabled = false
+local flightSpeed = 50
+local flightConn = nil
+local flightBv = nil
+local flightBg = nil
+
+local function stopFlight()
+    if flightConn then flightConn:Disconnect() flightConn = nil end
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hum then
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        hum.PlatformStand = false
+    end
+    if hrp then hrp.Velocity = Vector3.new(0, 0, 0) end
+end
+
+PlayerGroup1:AddToggle("Flight", { Text="Flight", Default=false, Callback=function(v)
+    flightEnabled = v
+    stopFlight()
+    if v then
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        hrp.CFrame = hrp.CFrame + Vector3.new(0, 5, 0)
+        flightConn = RunService.Heartbeat:Connect(function(dt)
+            if not flightEnabled then return end
+            local cam = Workspace.CurrentCamera
+            local char2 = player.Character
+            local hrp2 = char2 and char2:FindFirstChild("HumanoidRootPart")
+            local hum2 = char2 and char2:FindFirstChildOfClass("Humanoid")
+            if not hrp2 or not hum2 then return end
+            local dir = Vector3.new(0, 0, 0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0, 1, 0) end
+            hrp2.Velocity = Vector3.new(0, 0, 0)
+            hum2:ChangeState(Enum.HumanoidStateType.Physics)
+            if dir.Magnitude > 0 then
+                hrp2.CFrame = hrp2.CFrame + dir.Unit * flightSpeed * dt
+            end
+        end)
+        Library:Notify({ Title="Flight", Content="Enabled (WASD/Space/Shift)", Time=3 })
+    else
+        Library:Notify({ Title="Flight", Content="Disabled", Time=2 })
+    end
+end })
+
+PlayerGroup1:AddSlider("FlightSpeed", { Text="Flight Speed", Default=50, Min=20, Max=150, Suffix=" speed", Callback=function(v) flightSpeed = v end })
+
+local lockOnEnabled = false
+local lockOnHeld = false
+local lockOnConn = nil
+local lockOnInputConn1, lockOnInputConn2 = nil, nil
+
+PlayerGroup2:AddToggle("LockOn", { Text="Lock On (M2)", Default=false, Callback=function(v)
+    lockOnEnabled = v
+    if lockOnInputConn1 then lockOnInputConn1:Disconnect() lockOnInputConn1 = nil end
+    if lockOnInputConn2 then lockOnInputConn2:Disconnect() lockOnInputConn2 = nil end
+    if lockOnConn then lockOnConn:Disconnect() lockOnConn = nil end
+    if v then
+        lockOnInputConn1 = UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.UserInputType == Enum.UserInputType.MouseButton2 then lockOnHeld = true end
+        end)
+        lockOnInputConn2 = UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton2 then lockOnHeld = false end
+        end)
+        lockOnConn = RunService.RenderStepped:Connect(function()
+            if not lockOnEnabled or not lockOnHeld then return end
+            local killer = getKillerCharacter()
+            local target = killer and killer:FindFirstChild("HumanoidRootPart")
+            if not target then
+                target = getNearestSurvivor()
+                target = target and target:FindFirstChild("HumanoidRootPart")
+            end
+            if not target then return end
+            local cam = Workspace.CurrentCamera
+            cam.CFrame = CFrame.new(cam.CFrame.Position, target.Position)
+        end)
+        Library:Notify({ Title="Lock On", Content="Hold right-click to lock", Time=3 })
+    else
+        lockOnHeld = false
+        Library:Notify({ Title="Lock On", Content="Disabled", Time=2 })
+    end
 end })
 
 local jumpBoost = false
@@ -876,6 +1364,97 @@ PlayerGroup2:AddToggle("FullBright", { Text="Full Brightness", Default=false, Ca
     end
 end })
 
+local PlayerGroup3 = TabPlayer:AddLeftGroupbox("Emote Player")
+local emotesMap = {}
+local selectedEmoteName = nil
+local playEmoteEnabled = false
+local currentEmoteTrack = nil
+local emoteDropdown
+
+local function scanEmotes()
+    emotesMap = {}
+    local function collect(parent)
+        for _, obj in ipairs(parent:GetDescendants()) do
+            if obj:IsA("Animation") then
+                local path = obj.Parent and obj.Parent.Name:lower() or ""
+                local ancestorIsEmote = false
+                local cur = obj.Parent
+                while cur and cur ~= game do
+                    if cur.Name:lower():find("emote") then ancestorIsEmote = true break end
+                    cur = cur.Parent
+                end
+                if ancestorIsEmote then
+                    emotesMap[obj.Name] = obj
+                end
+            end
+        end
+    end
+    pcall(function() collect(ReplicatedStorage) end)
+    pcall(function() collect(game:GetService("ReplicatedFirst")) end)
+    pcall(function()
+        local gui = player:FindFirstChild("PlayerGui")
+        if gui then collect(gui) end
+    end)
+    pcall(function()
+        local char = player.Character
+        if char then collect(char) end
+    end)
+    local names = {}
+    for name in pairs(emotesMap) do table.insert(names, name) end
+    table.sort(names)
+    return names
+end
+
+local function stopCurrentEmote()
+    if currentEmoteTrack then
+        pcall(function() currentEmoteTrack:Stop() end)
+        currentEmoteTrack = nil
+    end
+end
+
+local function playSelectedEmote()
+    stopCurrentEmote()
+    local emote = selectedEmoteName and emotesMap[selectedEmoteName]
+    if not emote then
+        Library:Notify({ Title="Emote Player", Content="No emote selected", Time=2 })
+        return
+    end
+    local char = player.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = hum
+    end
+    local ok, track = pcall(function() return animator:LoadAnimation(emote) end)
+    if ok and track then
+        track.Looped = true
+        track.Priority = Enum.AnimationPriority.Action
+        track:Play()
+        currentEmoteTrack = track
+    else
+        Library:Notify({ Title="Emote Player", Content="Failed to load emote", Time=2 })
+    end
+end
+
+emoteDropdown = PlayerGroup3:AddDropdown("EmoteSelect", { Text="Select Emote", Values={}, AllowNull=true, Callback=function(v)
+    selectedEmoteName = v
+    if playEmoteEnabled then playSelectedEmote() end
+end })
+
+PlayerGroup3:AddButton({ Text="Scan Emotes Folder", Func=function()
+    local names = scanEmotes()
+    pcall(function() emoteDropdown:SetValues(names) end)
+    Library:Notify({ Title="Emote Player", Content="Found " .. #names .. " emotes", Time=3 })
+end })
+
+PlayerGroup3:AddToggle("PlayEmote", { Text="Play Emote", Default=false, Callback=function(v)
+    playEmoteEnabled = v
+    if v then playSelectedEmote() else stopCurrentEmote() end
+end })
+
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     task.wait(0.5)
@@ -894,6 +1473,7 @@ player.CharacterAdded:Connect(function(newChar)
             if part:IsA("BasePart") then part.CanCollide = false end
         end
     end
+    if playEmoteEnabled and selectedEmoteName then task.wait(1) playSelectedEmote() end
 end)
 
 SettingsGroup1:AddDropdown("ThemePicker", { Text="Theme Preset", Values={"Blue","Cyan","Dark","Green","Light","Orange","Pink","Purple","Red"}, Default="Dark", Callback=function(v) applyThemeKeepAccent(v) end })
@@ -930,7 +1510,6 @@ for _, theme in ipairs(themeButtons) do
     end })
 end
 
-SettingsGroup2:AddSlider("StealthLevel", { Text="Stealth Level", Default=50, Min=0, Max=100, Suffix="%", Callback=function(v) stealthLevel = v/100 end })
 SettingsGroup2:AddSlider("DPISlider", { Text="DPI Scale", Default=100, Min=75, Max=150, Suffix="%", Callback=function(v) Library:SetDPIScale(v) end })
 SettingsGroup2:AddToggle("CustomCursor", { Text="Custom Cursor", Default=not isMobile, Callback=function(v) Library.ShowCustomCursor = v end })
 SettingsGroup2:AddButton({ Text="Minimize Window", Func=function() Window:Minimize() end })
